@@ -1,16 +1,38 @@
 import {
-  env, envInt, json, readJson, clientIp, licenseId, getLicenseById,
+  env, envInt, json, clientIp, licenseId, getLicenseById,
   activateDevice, deviceCount, expired, rateLimit
 } from "../lib/core.js";
 
 const fail = (code, status = 200, extra = {}) => json({ success:false, code, ...extra }, status);
 
+async function readVerifyBody(request) {
+  let text = "";
+  try { text = await request.text(); } catch { return null; }
+  if (!text) return null;
+
+  // Preferred format: JSON.
+  try {
+    const parsed = JSON.parse(text);
+    if (parsed && typeof parsed === "object") return parsed;
+  } catch {}
+
+  // Native/libcurl clients commonly send POSTFIELDS using the default
+  // application/x-www-form-urlencoded content type. Accept that too.
+  try {
+    const params = new URLSearchParams(text);
+    const body = Object.fromEntries(params.entries());
+    return Object.keys(body).length ? body : null;
+  } catch {
+    return null;
+  }
+}
+
 export default {
   async fetch(request) {
     if (request.method !== "POST") return fail("METHOD_NOT_ALLOWED", 405);
     try {
-      const body = await readJson(request);
-      if (!body) return fail("INVALID_JSON", 400);
+      const body = await readVerifyBody(request);
+      if (!body) return fail("INVALID_BODY", 400);
 
       const key = String(body.key || "").trim();
       const deviceId = String(body.device_id || "").trim();
@@ -47,15 +69,12 @@ export default {
         });
       }
 
+      // Keep the success response intentionally compact for the native client.
+      // AWR_OK_2026 is the exact marker searched for inside the APK.
       return json({
+        auth:"AWR_OK_2026",
         success:true,
-        code:"VALID",
-        license_id:id,
-        expires_at:license.expires_at || null,
-        max_devices:license.max_devices || 1,
-        devices:await deviceCount(id),
-        first_activation_on_this_device:!activation.existing,
-        server_time:new Date().toISOString()
+        expires_at:license.expires_at || null
       });
     } catch (error) {
       console.error("verify error", error);
