@@ -25,30 +25,28 @@ async function readVerifyBody(request) {
 export default {
   async fetch(request) {
     try {
-      let key = "";
-
       if (request.method === "GET") {
         const url = new URL(request.url);
-        key = String(url.searchParams.get("key") || "").trim();
-      } else if (request.method === "POST") {
-        const body = await readVerifyBody(request);
-        if (!body) return fail("INVALID_BODY", 400);
-        key = String(body.key || "").trim();
-      } else {
-        return fail("METHOD_NOT_ALLOWED", 405);
-      }
-
-      if (!key || key.length > 128) return fail("KEY_REQUIRED", 400);
-
-      // Static compatibility key for the Kutta GL 4.5 client.
-      if (key === "AWR-2026") {
-        return json({
-          auth:"AWR_OK_2026",
-          success:true,
-          code:"VALID_STATIC",
-          expires_at:null
+        const key = String(url.searchParams.get("key") || "").trim();
+        if (key === "AWR-2026") {
+          return new Response("OK", {
+            status: 200,
+            headers: { "content-type": "text/plain; charset=utf-8" }
+          });
+        }
+        return new Response("INVALID", {
+          status: 200,
+          headers: { "content-type": "text/plain; charset=utf-8" }
         });
       }
+
+      if (request.method !== "POST") return fail("METHOD_NOT_ALLOWED", 405);
+
+      const body = await readVerifyBody(request);
+      if (!body) return fail("INVALID_BODY", 400);
+
+      const key = String(body.key || "").trim();
+      if (!key || key.length > 128) return fail("KEY_REQUIRED", 400);
 
       const id = licenseId(key);
       const license = await getLicenseById(id);
