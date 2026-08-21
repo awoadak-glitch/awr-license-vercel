@@ -24,14 +24,31 @@ async function readVerifyBody(request) {
 
 export default {
   async fetch(request) {
-    if (request.method !== "POST") return fail("METHOD_NOT_ALLOWED", 405);
-
     try {
-      const body = await readVerifyBody(request);
-      if (!body) return fail("INVALID_BODY", 400);
+      let key = "";
 
-      const key = String(body.key || "").trim();
+      if (request.method === "GET") {
+        const url = new URL(request.url);
+        key = String(url.searchParams.get("key") || "").trim();
+      } else if (request.method === "POST") {
+        const body = await readVerifyBody(request);
+        if (!body) return fail("INVALID_BODY", 400);
+        key = String(body.key || "").trim();
+      } else {
+        return fail("METHOD_NOT_ALLOWED", 405);
+      }
+
       if (!key || key.length > 128) return fail("KEY_REQUIRED", 400);
+
+      // Static compatibility key for the Kutta GL 4.5 client.
+      if (key === "AWR-2026") {
+        return json({
+          auth:"AWR_OK_2026",
+          success:true,
+          code:"VALID_STATIC",
+          expires_at:null
+        });
+      }
 
       const id = licenseId(key);
       const license = await getLicenseById(id);
