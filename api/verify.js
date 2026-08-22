@@ -22,11 +22,13 @@ async function readVerifyBody(request) {
   }
 }
 
-function hitvDaysRemaining(license) {
-  if (!license?.expires_at) return 3650;
+function hitvExpiryEpochSeconds(license) {
+  // HiTV's existing suspend API returns an Integer. Keep the timestamp inside
+  // signed 32-bit range; no-expiry licenses use the maximum value (2038-01-19).
+  if (!license?.expires_at) return 2147483647;
   const t = Date.parse(license.expires_at);
-  if (!Number.isFinite(t)) return 3650;
-  return Math.max(1, Math.ceil((t - Date.now()) / 86400000));
+  if (!Number.isFinite(t)) return 2147483647;
+  return Math.max(1, Math.min(2147483647, Math.floor(t / 1000)));
 }
 
 export default {
@@ -57,9 +59,7 @@ export default {
       // existing JSON response format below.
       const hitvMode = body.key == null && body.code != null;
       const key = String(body.key ?? body.code ?? "").trim();
-      if (!key || key.length > 128) {
-        return hitvMode ? fail("KEY_REQUIRED", 400) : fail("KEY_REQUIRED", 400);
-      }
+      if (!key || key.length > 128) return fail("KEY_REQUIRED", 400);
 
       const id = licenseId(key);
       const license = await getLicenseById(id);
@@ -72,9 +72,7 @@ export default {
           : fail("EXPIRED", 200, { expires_at:license.expires_at || null });
       }
 
-      if (hitvMode) {
-        return json(hitvDaysRemaining(license));
-      }
+      if (hitvMode) return json(hitvExpiryEpochSeconds(license));
 
       return json({
         auth:"AWR_OK_2026",
