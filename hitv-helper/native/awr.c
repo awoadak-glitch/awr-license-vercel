@@ -1,62 +1,47 @@
-#define _GNU_SOURCE
 #include <jni.h>
-#include <link.h>
-#include <stdint.h>
-#include <string.h>
-#include <sys/mman.h>
-#include <unistd.h>
 
-static uintptr_t native_base = 0;
+static volatile jint g_vip_enabled = 0;
 
-static int find_cb(struct dl_phdr_info *info, size_t size, void *data) {
-    (void)size; (void)data;
-    if (info && info->dlpi_name && strstr(info->dlpi_name, "libNative.so")) {
-        native_base = (uintptr_t)info->dlpi_addr;
-        return 1;
-    }
-    return 0;
-}
-
-static int patch_one(uintptr_t addr, int enabled) {
-    long ps = sysconf(_SC_PAGESIZE);
-    if (ps <= 0) ps = 4096;
-    uintptr_t page = addr & ~((uintptr_t)ps - 1u);
-    if (mprotect((void*)page, (size_t)ps, PROT_READ | PROT_WRITE) != 0) return 0;
-
-    volatile uint32_t *p = (volatile uint32_t*)addr;
-    p[0] = enabled ? 0x52800020u : 0x52800000u; /* mov w0,#1 / mov w0,#0 */
-    p[1] = 0xD65F03C0u;                         /* ret */
-    __builtin___clear_cache((char*)addr, (char*)(addr + 8));
-
-    if (mprotect((void*)page, (size_t)ps, PROT_READ | PROT_EXEC) != 0) return 0;
-    return 1;
+static jboolean JNICALL awrVipGate(JNIEnv *env, jobject thiz) {
+    (void)env;
+    (void)thiz;
+    return g_vip_enabled ? JNI_TRUE : JNI_FALSE;
 }
 
 JNIEXPORT jboolean JNICALL
 Java_com_awr_license_AwrLicenseInitializationContentProviderForHiTV2026_nativeSetVipEnabled(
         JNIEnv *env, jclass clazz, jboolean enabled) {
-    (void)env; (void)clazz;
-    native_base = 0;
-    dl_iterate_phdr(find_cb, 0);
-    if (!native_base) return JNI_FALSE;
+    (void)clazz;
+    if (env == NULL) return JNI_FALSE;
 
-    /* UserState JNI wrappers in libNative.so (HiTV 3.1.2 / versionCode 81). */
-    static const uintptr_t offsets[] = {
-        0x62794, /* isMemberValid */
-        0x631A4, /* vipEnableAd */
-        0x63254, /* vipEnableDownloadFast */
-        0x63304, /* vipEnableDownloadHd */
-        0x633B4, /* vipEnableDownloadParallel */
-        0x63464, /* vipEnablePaidVideo */
-        0x63514, /* vipEnablePlayHd */
-        0x635C4, /* vipEnableProjection */
-        0x63674, /* vipEnableTV */
-        0x63724  /* vipEnableTogetherVoice */
+    g_vip_enabled = enabled ? 1 : 0;
+
+    jclass userState = (*env)->FindClass(env, "com/hitv/venom/store/user/UserState");
+    if (userState == NULL) {
+        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+        return JNI_FALSE;
+    }
+
+    JNINativeMethod methods[] = {
+        {"isMemberValid", "()Z", (void *)awrVipGate},
+        {"vipEnableAd", "()Z", (void *)awrVipGate},
+        {"vipEnableDownloadFast", "()Z", (void *)awrVipGate},
+        {"vipEnableDownloadHd", "()Z", (void *)awrVipGate},
+        {"vipEnableDownloadParallel", "()Z", (void *)awrVipGate},
+        {"vipEnablePaidVideo", "()Z", (void *)awrVipGate},
+        {"vipEnablePlayHd", "()Z", (void *)awrVipGate},
+        {"vipEnableProjection", "()Z", (void *)awrVipGate},
+        {"vipEnableTV", "()Z", (void *)awrVipGate},
+        {"vipEnableTogetherVoice", "()Z", (void *)awrVipGate}
     };
 
-    int value = enabled ? 1 : 0;
-    for (unsigned i = 0; i < sizeof(offsets)/sizeof(offsets[0]); ++i) {
-        if (!patch_one(native_base + offsets[i], value)) return JNI_FALSE;
+    if ((*env)->RegisterNatives(env, userState, methods,
+            (jint)(sizeof(methods) / sizeof(methods[0]))) != 0) {
+        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+        (*env)->DeleteLocalRef(env, userState);
+        return JNI_FALSE;
     }
+
+    (*env)->DeleteLocalRef(env, userState);
     return JNI_TRUE;
 }
