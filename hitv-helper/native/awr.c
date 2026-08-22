@@ -35,8 +35,9 @@ Java_com_awr_license_AwrLicenseInitializationContentProviderForHiTV2026_nativeSe
         {"vipEnableTogetherVoice", "()Z", (void *)awrVipGate}
     };
 
-    if ((*env)->RegisterNatives(env, userState, methods,
-            (jint)(sizeof(methods) / sizeof(methods[0]))) != 0) {
+    jint count = (jint)(sizeof(methods) / sizeof(methods[0]));
+    jint rc = (*env)->RegisterNatives(env, userState, methods, count);
+    if (rc != 0) {
         if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
         (*env)->DeleteLocalRef(env, userState);
         return JNI_FALSE;
