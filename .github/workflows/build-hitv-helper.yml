@@ -45,17 +45,30 @@ jobs:
             hitv-helper/build/helper.jar
           mv hitv-helper/build/dex/classes.dex hitv-helper/build/classes13.dex
 
-      - name: Install NDK
+      - name: Resolve Android NDK
+        id: ndk
         shell: bash
         run: |
           set -euo pipefail
-          yes | sdkmanager 'ndk;27.2.12479018' >/dev/null
+          NDK=$(find "$ANDROID_HOME/ndk" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | sort -V | tail -1 || true)
+          if [ -z "$NDK" ]; then
+            SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager 2>/dev/null | head -1 || true)
+            if [ -z "$SDKMANAGER" ]; then
+              echo 'No Android NDK and no sdkmanager found' >&2
+              exit 1
+            fi
+            yes | "$SDKMANAGER" --licenses >/dev/null || true
+            "$SDKMANAGER" 'ndk;27.2.12479018'
+            NDK="$ANDROID_HOME/ndk/27.2.12479018"
+          fi
+          echo "ndk=$NDK" >> "$GITHUB_OUTPUT"
+          echo "Using NDK: $NDK"
 
       - name: Compile ARM64 native helper
         shell: bash
         run: |
           set -euo pipefail
-          NDK="$ANDROID_HOME/ndk/27.2.12479018"
+          NDK='${{ steps.ndk.outputs.ndk }}'
           TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64"
           "$TOOLCHAIN/bin/aarch64-linux-android21-clang" \
             -shared -fPIC -O2 -Wl,--build-id=none \
