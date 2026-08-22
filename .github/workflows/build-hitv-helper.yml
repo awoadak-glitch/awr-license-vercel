@@ -33,14 +33,22 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p hitv-helper/build/classes hitv-helper/build/dex
+          mkdir -p hitv-helper/build/stubclasses hitv-helper/build/classes hitv-helper/build/dex
           javac -source 8 -target 8 \
             -cp '${{ steps.sdk.outputs.android_jar }}' \
+            -d hitv-helper/build/stubclasses \
+            hitv-helper/stub/com/hitv/venom/module_base/flutterdownloader/DownloadedFileProvider.java
+          jar cf hitv-helper/build/stub.jar -C hitv-helper/build/stubclasses .
+
+          javac -source 8 -target 8 \
+            -cp '${{ steps.sdk.outputs.android_jar }}:hitv-helper/build/stub.jar' \
             -d hitv-helper/build/classes \
             hitv-helper/src/com/awr/license/AwrLicenseInitializationContentProviderForHiTV2026.java
           jar cf hitv-helper/build/helper.jar -C hitv-helper/build/classes .
+
           '${{ steps.sdk.outputs.d8 }}' --release --min-api 21 \
             --lib '${{ steps.sdk.outputs.android_jar }}' \
+            --classpath hitv-helper/build/stub.jar \
             --output hitv-helper/build/dex \
             hitv-helper/build/helper.jar
           mv hitv-helper/build/dex/classes.dex hitv-helper/build/classes13.dex
