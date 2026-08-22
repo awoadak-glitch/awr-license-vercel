@@ -39,6 +39,7 @@ public final class AwrLicenseInitializationContentProviderForHiTV2026 extends Do
     private int hookAttempts;
 
     private static native boolean nativeSetVipEnabled(boolean enabled);
+    private static native boolean nativeDisableTraidUpdate();
 
     @Override
     public boolean onCreate() {
@@ -57,6 +58,8 @@ public final class AwrLicenseInitializationContentProviderForHiTV2026 extends Do
             nativeLoaded = false;
         }
 
+        suppressTraidUpdateEarly();
+
         Context appCtx = ctx.getApplicationContext();
         if (appCtx instanceof Application) {
             ((Application) appCtx).registerActivityLifecycleCallbacks(this);
@@ -67,6 +70,17 @@ public final class AwrLicenseInitializationContentProviderForHiTV2026 extends Do
             verifyAsync(saved.trim(), null, false);
         }
         return parent;
+    }
+
+    private void suppressTraidUpdateEarly() {
+        if (!nativeLoaded || main == null) return;
+        main.post(new Runnable() {
+            private int tries = 0;
+            @Override public void run() {
+                try { nativeDisableTraidUpdate(); } catch (Throwable ignored) {}
+                if (++tries < 120) main.postDelayed(this, 50);
+            }
+        });
     }
 
     private void scheduleHookAfterStartup() {
@@ -215,6 +229,9 @@ public final class AwrLicenseInitializationContentProviderForHiTV2026 extends Do
     }
 
     @Override public void onActivityResumed(Activity activity) {
+        if (nativeLoaded) {
+            try { nativeDisableTraidUpdate(); } catch (Throwable ignored) {}
+        }
         scheduleHookAfterStartup();
         if (isVipActivity(activity)) {
             hookNow();
