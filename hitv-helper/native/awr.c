@@ -1,5 +1,6 @@
 #include <jni.h>
 
+/* AWR HiTV helper: VIP gate + TraidMod update suppression. */
 static volatile jint g_vip_enabled = 0;
 
 static jboolean JNICALL awrVipGate(JNIEnv *env, jobject thiz) {
