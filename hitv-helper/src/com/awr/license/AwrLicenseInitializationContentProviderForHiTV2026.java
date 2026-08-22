@@ -3,20 +3,17 @@ package com.awr.license;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.Application;
-import android.content.ContentProvider;
-import android.content.ContentValues;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.SharedPreferences;
-import android.database.Cursor;
-import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.text.InputType;
-import android.view.Window;
 import android.widget.EditText;
 import android.widget.Toast;
+
+import com.hitv.venom.module_base.flutterdownloader.DownloadedFileProvider;
 
 import org.json.JSONObject;
 
@@ -27,27 +24,31 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 
-public final class AwrLicenseInitializationContentProviderForHiTV2026 extends ContentProvider implements Application.ActivityLifecycleCallbacks {
+public final class AwrLicenseInitializationContentProviderForHiTV2026 extends DownloadedFileProvider implements Application.ActivityLifecycleCallbacks {
     private static final String PREFS = "awr_hitv_license";
     private static final String KEY_NAME = "license_key";
     private static final String VERIFY_URL = "https://awr-license-vercel.vercel.app/api/verify";
+
     private static volatile boolean vipEnabled = false;
     private static volatile boolean dialogShowing = false;
-    private static volatile boolean skipVipDialogForSession = false;
-    private static boolean nativeLoaded = false;
+    private static volatile boolean nativeLoaded = false;
 
     private SharedPreferences prefs;
     private Handler main;
-    private int patchAttempts = 0;
+    private int patchAttempts;
 
     private static native boolean nativeSetVipEnabled(boolean enabled);
 
     @Override
     public boolean onCreate() {
-        Context ctx = getContext();
-        if (ctx == null) return true;
+        boolean parent = true;
+        try { parent = super.onCreate(); } catch (Throwable ignored) {}
+
+        final Context ctx = getContext();
+        if (ctx == null) return parent;
         prefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         main = new Handler(Looper.getMainLooper());
+
         try {
             System.loadLibrary("awr");
             nativeLoaded = true;
@@ -63,11 +64,11 @@ public final class AwrLicenseInitializationContentProviderForHiTV2026 extends Co
             ((Application) appCtx).registerActivityLifecycleCallbacks(this);
         }
 
-        final String saved = prefs.getString(KEY_NAME, "");
+        String saved = prefs.getString(KEY_NAME, "");
         if (saved != null && !saved.trim().isEmpty()) {
             verifyAsync(saved.trim(), null, false);
         }
-        return true;
+        return parent;
     }
 
     private void schedulePatch() {
@@ -77,7 +78,7 @@ public final class AwrLicenseInitializationContentProviderForHiTV2026 extends Co
             @Override public void run() {
                 boolean ok = false;
                 try { ok = nativeSetVipEnabled(vipEnabled); } catch (Throwable ignored) {}
-                if (!ok && patchAttempts++ < 40) main.postDelayed(this, 250);
+                if (!ok && patchAttempts++ < 60) main.postDelayed(this, 250);
             }
         });
     }
@@ -92,11 +93,12 @@ public final class AwrLicenseInitializationContentProviderForHiTV2026 extends Co
     private boolean isVipActivity(Activity a) {
         if (a == null) return false;
         String n = a.getClass().getName();
-        return "com.hitv.venom.module_vip.VipActivity".equals(n) || n.contains(".module_vip.");
+        return "com.hitv.venom.module_vip.VipActivity".equals(n)
+                || "com.hitv.venom.module_vip.rights.VipRightsActivity".equals(n);
     }
 
     private void showLicenseDialog(final Activity activity) {
-        if (activity == null || activity.isFinishing() || vipEnabled || dialogShowing || skipVipDialogForSession) return;
+        if (activity == null || activity.isFinishing() || vipEnabled || dialogShowing) return;
         dialogShowing = true;
 
         final EditText input = new EditText(activity);
@@ -108,14 +110,11 @@ public final class AwrLicenseInitializationContentProviderForHiTV2026 extends Co
 
         final AlertDialog dialog = new AlertDialog.Builder(activity)
                 .setTitle("AWR VIP")
-                .setMessage("أدخل كود الاشتراك لتفعيل ميزات VIP. يمكنك المتابعة مجانًا بدون تفعيل.")
+                .setMessage("أدخل كود الاشتراك لتفعيل ميزات VIP")
                 .setView(input)
                 .setPositiveButton("تفعيل", null)
-                .setNegativeButton("متابعة مجانًا", new DialogInterface.OnClickListener() {
-                    @Override public void onClick(DialogInterface d, int which) {
-                        skipVipDialogForSession = true;
-                        dialogShowing = false;
-                    }
+                .setNegativeButton("إلغاء", new DialogInterface.OnClickListener() {
+                    @Override public void onClick(DialogInterface d, int which) { dialogShowing = false; }
                 })
                 .setOnCancelListener(new DialogInterface.OnCancelListener() {
                     @Override public void onCancel(DialogInterface d) { dialogShowing = false; }
@@ -125,24 +124,21 @@ public final class AwrLicenseInitializationContentProviderForHiTV2026 extends Co
         dialog.setOnShowListener(new DialogInterface.OnShowListener() {
             @Override public void onShow(DialogInterface ignored) {
                 dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
-                    final String key = input.getText().toString().trim();
+                    String key = input.getText().toString().trim();
                     if (key.isEmpty()) {
                         input.setError("أدخل الكود");
                         return;
                     }
                     dialog.getButton(AlertDialog.BUTTON_POSITIVE).setEnabled(false);
-                    verifyAsync(key, activity, true);
                     dialog.dismiss();
                     dialogShowing = false;
+                    verifyAsync(key, activity, true);
                 });
             }
         });
-        try {
-            Window w = dialog.getWindow();
-            dialog.show();
-        } catch (Throwable e) {
-            dialogShowing = false;
-        }
+
+        try { dialog.show(); }
+        catch (Throwable ignored) { dialogShowing = false; }
     }
 
     private void verifyAsync(final String key, final Activity activity, final boolean userInitiated) {
@@ -152,20 +148,19 @@ public final class AwrLicenseInitializationContentProviderForHiTV2026 extends Co
                 String code = "NETWORK_ERROR";
                 HttpURLConnection c = null;
                 try {
-                    URL u = new URL(VERIFY_URL);
-                    c = (HttpURLConnection) u.openConnection();
+                    c = (HttpURLConnection) new URL(VERIFY_URL).openConnection();
                     c.setConnectTimeout(10000);
                     c.setReadTimeout(10000);
                     c.setRequestMethod("POST");
                     c.setDoOutput(true);
                     c.setRequestProperty("Content-Type", "application/json; charset=utf-8");
                     c.setRequestProperty("Accept", "application/json");
-                    String safeKey = key.replace("\\", "\\\\").replace("\"", "\\\"");
-                    byte[] body = ("{\"key\":\"" + safeKey + "\"}").getBytes("UTF-8");
+
+                    String safe = key.replace("\\", "\\\\").replace("\"", "\\\"");
+                    byte[] body = ("{\"key\":\"" + safe + "\"}").getBytes("UTF-8");
                     c.setFixedLengthStreamingMode(body.length);
                     OutputStream os = c.getOutputStream();
                     os.write(body);
-                    os.flush();
                     os.close();
 
                     InputStream is = c.getResponseCode() >= 400 ? c.getErrorStream() : c.getInputStream();
@@ -188,28 +183,27 @@ public final class AwrLicenseInitializationContentProviderForHiTV2026 extends Co
                 }
 
                 final boolean ok = valid;
-                final String resultCode = code;
+                final String result = code;
+                if (main == null) return;
                 main.post(new Runnable() {
                     @Override public void run() {
                         if (ok) {
                             prefs.edit().putString(KEY_NAME, key).apply();
                             vipEnabled = true;
-                            skipVipDialogForSession = false;
                             patchNow();
-                            Context toastCtx = activity != null ? activity : getContext();
-                            if (toastCtx != null) Toast.makeText(toastCtx, "تم تفعيل AWR VIP", Toast.LENGTH_LONG).show();
+                            Context tc = activity != null ? activity : getContext();
+                            if (tc != null) Toast.makeText(tc, "تم تفعيل AWR VIP", Toast.LENGTH_LONG).show();
                         } else {
                             vipEnabled = false;
                             patchNow();
-                            if ("INVALID_KEY".equals(resultCode) || "REVOKED".equals(resultCode) || "EXPIRED".equals(resultCode)) {
+                            if ("INVALID_KEY".equals(result) || "REVOKED".equals(result) || "EXPIRED".equals(result)) {
                                 prefs.edit().remove(KEY_NAME).apply();
                             }
                             if (userInitiated && activity != null && !activity.isFinishing()) {
-                                String msg;
-                                if ("EXPIRED".equals(resultCode)) msg = "انتهت صلاحية الكود";
-                                else if ("REVOKED".equals(resultCode)) msg = "تم إلغاء الكود";
-                                else if ("NETWORK_ERROR".equals(resultCode)) msg = "تعذر الاتصال بسيرفر الترخيص";
-                                else msg = "الكود غير صالح";
+                                String msg = "الكود غير صالح";
+                                if ("EXPIRED".equals(result)) msg = "انتهت صلاحية الكود";
+                                else if ("REVOKED".equals(result)) msg = "تم إلغاء الكود";
+                                else if ("NETWORK_ERROR".equals(result)) msg = "تعذر الاتصال بسيرفر الترخيص";
                                 Toast.makeText(activity, msg, Toast.LENGTH_LONG).show();
                                 showLicenseDialog(activity);
                             }
@@ -230,10 +224,4 @@ public final class AwrLicenseInitializationContentProviderForHiTV2026 extends Co
     @Override public void onActivityStopped(Activity a) {}
     @Override public void onActivitySaveInstanceState(Activity a, Bundle b) {}
     @Override public void onActivityDestroyed(Activity a) {}
-
-    @Override public Cursor query(Uri uri, String[] projection, String selection, String[] selectionArgs, String sortOrder) { return null; }
-    @Override public String getType(Uri uri) { return null; }
-    @Override public Uri insert(Uri uri, ContentValues values) { return null; }
-    @Override public int delete(Uri uri, String selection, String[] selectionArgs) { return 0; }
-    @Override public int update(Uri uri, ContentValues values, String selection, String[] selectionArgs) { return 0; }
 }
