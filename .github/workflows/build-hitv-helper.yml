@@ -81,7 +81,7 @@ jobs:
           "$TOOLCHAIN/bin/aarch64-linux-android21-clang" \
             -shared -fPIC -O2 -Wl,--build-id=none \
             -o hitv-helper/build/libawr.so \
-            hitv-helper/native/awr.c -ldl
+            hitv-helper/native/awr.c
           "$TOOLCHAIN/bin/llvm-strip" hitv-helper/build/libawr.so
 
       - name: Show artifact hashes
