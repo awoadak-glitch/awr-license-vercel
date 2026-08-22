@@ -32,10 +32,11 @@ public final class AwrLicenseInitializationContentProviderForHiTV2026 extends Do
     private static volatile boolean vipEnabled = false;
     private static volatile boolean dialogShowing = false;
     private static volatile boolean nativeLoaded = false;
+    private static volatile boolean hookScheduled = false;
 
     private SharedPreferences prefs;
     private Handler main;
-    private int patchAttempts;
+    private int hookAttempts;
 
     private static native boolean nativeSetVipEnabled(boolean enabled);
 
@@ -56,9 +57,6 @@ public final class AwrLicenseInitializationContentProviderForHiTV2026 extends Do
             nativeLoaded = false;
         }
 
-        vipEnabled = false;
-        schedulePatch();
-
         Context appCtx = ctx.getApplicationContext();
         if (appCtx instanceof Application) {
             ((Application) appCtx).registerActivityLifecycleCallbacks(this);
@@ -71,23 +69,25 @@ public final class AwrLicenseInitializationContentProviderForHiTV2026 extends Do
         return parent;
     }
 
-    private void schedulePatch() {
-        if (!nativeLoaded || main == null) return;
-        patchAttempts = 0;
-        main.post(new Runnable() {
+    private void scheduleHookAfterStartup() {
+        if (!nativeLoaded || main == null || hookScheduled) return;
+        hookScheduled = true;
+        main.postDelayed(new Runnable() {
             @Override public void run() {
-                boolean ok = false;
-                try { ok = nativeSetVipEnabled(vipEnabled); } catch (Throwable ignored) {}
-                if (!ok && patchAttempts++ < 60) main.postDelayed(this, 250);
+                hookAttempts = 0;
+                main.post(new Runnable() {
+                    @Override public void run() {
+                        try { nativeSetVipEnabled(vipEnabled); } catch (Throwable ignored) {}
+                        if (++hookAttempts < 24) main.postDelayed(this, 500);
+                    }
+                });
             }
-        });
+        }, 2500);
     }
 
-    private void patchNow() {
+    private void hookNow() {
         if (!nativeLoaded) return;
-        try {
-            if (!nativeSetVipEnabled(vipEnabled)) schedulePatch();
-        } catch (Throwable ignored) {}
+        try { nativeSetVipEnabled(vipEnabled); } catch (Throwable ignored) {}
     }
 
     private boolean isVipActivity(Activity a) {
@@ -190,12 +190,12 @@ public final class AwrLicenseInitializationContentProviderForHiTV2026 extends Do
                         if (ok) {
                             prefs.edit().putString(KEY_NAME, key).apply();
                             vipEnabled = true;
-                            patchNow();
+                            hookNow();
                             Context tc = activity != null ? activity : getContext();
                             if (tc != null) Toast.makeText(tc, "تم تفعيل AWR VIP", Toast.LENGTH_LONG).show();
                         } else {
                             vipEnabled = false;
-                            patchNow();
+                            hookNow();
                             if ("INVALID_KEY".equals(result) || "REVOKED".equals(result) || "EXPIRED".equals(result)) {
                                 prefs.edit().remove(KEY_NAME).apply();
                             }
@@ -215,8 +215,11 @@ public final class AwrLicenseInitializationContentProviderForHiTV2026 extends Do
     }
 
     @Override public void onActivityResumed(Activity activity) {
-        patchNow();
-        if (isVipActivity(activity) && !vipEnabled) showLicenseDialog(activity);
+        scheduleHookAfterStartup();
+        if (isVipActivity(activity)) {
+            hookNow();
+            if (!vipEnabled) showLicenseDialog(activity);
+        }
     }
     @Override public void onActivityCreated(Activity a, Bundle b) {}
     @Override public void onActivityStarted(Activity a) {}
