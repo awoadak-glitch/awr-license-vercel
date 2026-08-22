@@ -1,4 +1,4 @@
-name: Build HiTV Helper
+name: Build HiTV Helper JNI
 
 on:
   push:
