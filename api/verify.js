@@ -22,6 +22,13 @@ async function readVerifyBody(request) {
   }
 }
 
+function hitvDaysRemaining(license) {
+  if (!license?.expires_at) return 3650;
+  const t = Date.parse(license.expires_at);
+  if (!Number.isFinite(t)) return 3650;
+  return Math.max(1, Math.ceil((t - Date.now()) / 86400000));
+}
+
 export default {
   async fetch(request) {
     try {
@@ -45,16 +52,28 @@ export default {
       const body = await readVerifyBody(request);
       if (!body) return fail("INVALID_BODY", 400);
 
-      const key = String(body.key || "").trim();
-      if (!key || key.length > 128) return fail("KEY_REQUIRED", 400);
+      // HiTV's existing VIP-code screen sends { code, userId } and expects
+      // an integer payload. Normal AWR clients keep using { key } and the
+      // existing JSON response format below.
+      const hitvMode = body.key == null && body.code != null;
+      const key = String(body.key ?? body.code ?? "").trim();
+      if (!key || key.length > 128) {
+        return hitvMode ? fail("KEY_REQUIRED", 400) : fail("KEY_REQUIRED", 400);
+      }
 
       const id = licenseId(key);
       const license = await getLicenseById(id);
 
-      if (!license) return fail("INVALID_KEY");
-      if (license.revoked) return fail("REVOKED");
+      if (!license) return hitvMode ? fail("INVALID_KEY", 401) : fail("INVALID_KEY");
+      if (license.revoked) return hitvMode ? fail("REVOKED", 403) : fail("REVOKED");
       if (expired(license)) {
-        return fail("EXPIRED", 200, { expires_at:license.expires_at || null });
+        return hitvMode
+          ? fail("EXPIRED", 403, { expires_at:license.expires_at || null })
+          : fail("EXPIRED", 200, { expires_at:license.expires_at || null });
+      }
+
+      if (hitvMode) {
+        return json(hitvDaysRemaining(license));
       }
 
       return json({
