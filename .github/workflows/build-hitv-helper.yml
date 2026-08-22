@@ -6,6 +6,11 @@ on:
     paths:
       - 'hitv-helper/**'
       - '.github/workflows/build-hitv-helper.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'hitv-helper/**'
+      - '.github/workflows/build-hitv-helper.yml'
   workflow_dispatch:
 
 jobs:
