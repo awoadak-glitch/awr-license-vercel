@@ -1,0 +1,44 @@
+name: Build AWR326 Helper
+
+on:
+  push:
+    branches: [tools-export]
+    paths:
+      - '.github/workflows/build-awr326-helper.yml'
+      - 'tools/awr326/**'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: tools-export
+      - name: Compile helper dex
+        shell: bash
+        run: |
+          set -euxo pipefail
+          PLATFORM=$(ls -1 "$ANDROID_HOME/platforms" | sort -V | tail -1)
+          BT=$(ls -1 "$ANDROID_HOME/build-tools" | sort -V | tail -1)
+          rm -rf /tmp/awr326 && mkdir -p /tmp/awr326/classes /tmp/awr326/dex
+          javac -source 8 -target 8 -encoding UTF-8 -cp "$ANDROID_HOME/platforms/$PLATFORM/android.jar" -d /tmp/awr326/classes \
+            tools/awr326/stub/com/captha/didymoi/module_base/flutterdownloader/DownloadedFileProvider.java \
+            tools/awr326/src/com/awr/license/AwrVipInitializationContentProviderForHiTV326CleanAppXX.java
+          rm -f /tmp/awr326/classes/com/captha/didymoi/module_base/flutterdownloader/DownloadedFileProvider.class
+          "$ANDROID_HOME/build-tools/$BT/d8" --min-api 21 --output /tmp/awr326/dex $(find /tmp/awr326/classes -name '*.class' -type f | tr '\n' ' ')
+          mkdir -p tools/awr326/out
+          base64 -w0 /tmp/awr326/dex/classes.dex > tools/awr326/out/classes2.dex.b64
+          sha256sum /tmp/awr326/dex/classes.dex > tools/awr326/out/classes2.dex.sha256
+          printf 'platform=%s\nbuild-tools=%s\n' "$PLATFORM" "$BT" > tools/awr326/out/build.txt
+      - name: Commit result
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add tools/awr326/out
+          git diff --cached --quiet && exit 0
+          git commit -m 'Build AWR326 helper dex'
+          git push origin HEAD:tools-export
