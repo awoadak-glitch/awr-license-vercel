@@ -28,9 +28,11 @@ jobs:
             tools/awr326/src/com/awr/license/AwrVipInitializationContentProviderForHiTV326CleanAppXX.java
           rm -f /tmp/awr326/classes/com/captha/didymoi/module_base/flutterdownloader/DownloadedFileProvider.class
           "$ANDROID_HOME/build-tools/$BT/d8" --min-api 21 --output /tmp/awr326/dex $(find /tmp/awr326/classes -name '*.class' -type f | tr '\n' ' ')
-          mkdir -p tools/awr326/out
-          base64 -w0 /tmp/awr326/dex/classes.dex > tools/awr326/out/classes2.dex.b64
+          rm -rf tools/awr326/out && mkdir -p tools/awr326/out/chunks
+          base64 -w0 /tmp/awr326/dex/classes.dex > /tmp/awr326/classes2.dex.b64
+          split -b 3000 -d -a 2 /tmp/awr326/classes2.dex.b64 tools/awr326/out/chunks/part-
           sha256sum /tmp/awr326/dex/classes.dex > tools/awr326/out/classes2.dex.sha256
+          wc -c /tmp/awr326/dex/classes.dex /tmp/awr326/classes2.dex.b64 > tools/awr326/out/sizes.txt
           printf 'platform=%s\nbuild-tools=%s\n' "$PLATFORM" "$BT" > tools/awr326/out/build.txt
       - name: Commit result
         shell: bash
@@ -38,7 +40,7 @@ jobs:
           set -euxo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add tools/awr326/out
+          git add -A tools/awr326/out
           git diff --cached --quiet && exit 0
-          git commit -m 'Build AWR326 helper dex'
+          git commit -m 'Build chunked AWR326 helper dex'
           git push origin HEAD:tools-export
