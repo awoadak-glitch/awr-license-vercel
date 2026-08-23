@@ -7,7 +7,7 @@ export default {
     }
 
     return json({
-      versionCode: 0,
+      versionCode: 2000000000,
       versionName: "3.1.2",
       Msg: "",
       downloadLink: "https://awr-license-vercel.vercel.app"
