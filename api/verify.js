@@ -3,6 +3,8 @@ import { json, licenseId, getLicenseById, expired } from "../lib/core.js";
 const fail = (code, status = 200, extra = {}) =>
   json({ success:false, code, ...extra }, status);
 
+const UNLIMITED_KEYS = new Set(["AWR_2026", "AWR-2026"]);
+
 async function readVerifyBody(request) {
   let text = "";
   try { text = await request.text(); } catch { return null; }
@@ -37,7 +39,7 @@ export default {
       if (request.method === "GET") {
         const url = new URL(request.url);
         const key = String(url.searchParams.get("key") || "").trim();
-        if (key === "AWR-2026") {
+        if (UNLIMITED_KEYS.has(key)) {
           return new Response("OK", {
             status: 200,
             headers: { "content-type": "text/plain; charset=utf-8" }
@@ -54,12 +56,23 @@ export default {
       const body = await readVerifyBody(request);
       if (!body) return fail("INVALID_BODY", 400);
 
-      // HiTV's existing VIP-code screen sends { code, userId } and expects
-      // an integer payload. Normal AWR clients keep using { key } and the
-      // existing JSON response format below.
+      // HiTV/AWR VIP screen sends { code, userId } and expects an integer payload.
+      // Normal AWR clients keep using { key } and the JSON response format below.
       const hitvMode = body.key == null && body.code != null;
       const key = String(body.key ?? body.code ?? "").trim();
       if (!key || key.length > 128) return fail("KEY_REQUIRED", 400);
+
+      // Permanent owner/master VIP key. No expiry and no device limit.
+      if (UNLIMITED_KEYS.has(key)) {
+        if (hitvMode) return json(2147483647);
+        return json({
+          auth:"AWR_OK_2026",
+          success:true,
+          code:"VALID",
+          expires_at:null,
+          unlimited:true
+        });
+      }
 
       const id = licenseId(key);
       const license = await getLicenseById(id);
