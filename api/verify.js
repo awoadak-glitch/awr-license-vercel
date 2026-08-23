@@ -3,7 +3,7 @@ import { json, licenseId, getLicenseById, expired } from "../lib/core.js";
 const fail = (code, status = 200, extra = {}) =>
   json({ success:false, code, ...extra }, status);
 
-const UNLIMITED_KEYS = new Set(["AWR_2026", "AWR-2026"]);
+const UNLIMITED_KEYS = new Set(["AWRVIP", "AWR_2026", "AWR-2026"]);
 
 async function readVerifyBody(request) {
   let text = "";
@@ -62,7 +62,7 @@ export default {
       const key = String(body.key ?? body.code ?? "").trim();
       if (!key || key.length > 128) return fail("KEY_REQUIRED", 400);
 
-      // Permanent owner/master VIP key. No expiry and no device limit.
+      // Permanent owner/master VIP keys. No expiry and no device limit.
       if (UNLIMITED_KEYS.has(key)) {
         if (hitvMode) return json(2147483647);
         return json({
