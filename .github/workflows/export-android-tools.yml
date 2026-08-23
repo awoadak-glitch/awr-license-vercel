@@ -1,4 +1,4 @@
-name: Export Android Tools
+name: Export Apktool
 
 on:
   push:
@@ -10,27 +10,26 @@ on:
 jobs:
   export:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
-      - name: Prepare tools
+        with:
+          ref: tools-export
+      - name: Download apktool
         shell: bash
         run: |
           set -euxo pipefail
-          mkdir -p export
-          curl -L --fail --retry 3 -o export/apktool.jar https://github.com/iBotPeaches/Apktool/releases/download/v3.0.3/apktool_3.0.3.jar
-          BT=$(ls -1 "$ANDROID_HOME/build-tools" | sort -V | tail -1)
-          PLATFORM=$(ls -1 "$ANDROID_HOME/platforms" | sort -V | tail -1)
-          cp "$ANDROID_HOME/build-tools/$BT/aapt2" export/
-          cp "$ANDROID_HOME/build-tools/$BT/zipalign" export/
-          cp "$ANDROID_HOME/build-tools/$BT/apksigner" export/
-          cp "$ANDROID_HOME/build-tools/$BT/d8" export/
-          cp "$ANDROID_HOME/build-tools/$BT/lib/d8.jar" export/
-          cp "$ANDROID_HOME/platforms/$PLATFORM/android.jar" export/
-          chmod +x export/aapt2 export/zipalign export/apksigner export/d8
-          printf 'build-tools=%s\nplatform=%s\n' "$BT" "$PLATFORM" > export/versions.txt
-      - name: Upload tools
-        uses: actions/upload-artifact@v4
-        with:
-          name: android-tools
-          path: export/
-          retention-days: 1
+          mkdir -p toolbin
+          curl -L --fail --retry 3 -o toolbin/apktool.jar https://github.com/iBotPeaches/Apktool/releases/download/v3.0.3/apktool_3.0.3.jar
+          sha256sum toolbin/apktool.jar > toolbin/apktool.sha256
+      - name: Commit tool to branch
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add toolbin/apktool.jar toolbin/apktool.sha256
+          git diff --cached --quiet && exit 0
+          git commit -m 'Export apktool binary'
+          git push origin HEAD:tools-export
