@@ -1,99 +1,31 @@
-name: Build HiTV Helper JNI
+name: Export Android APK Tools
 
 on:
   push:
     branches: [hitv-helper-build]
     paths:
-      - 'hitv-helper/**'
-      - '.github/workflows/build-hitv-helper.yml'
-  pull_request:
-    branches: [main]
-    paths:
-      - 'hitv-helper/**'
       - '.github/workflows/build-hitv-helper.yml'
   workflow_dispatch:
 
 jobs:
-  build:
+  export-tools:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Resolve Android SDK
-        id: sdk
+      - name: Export apksigner and zipalign
         shell: bash
         run: |
           set -euo pipefail
-          PLATFORM=$(find "$ANDROID_HOME/platforms" -maxdepth 1 -type d -name 'android-*' | sort -V | tail -1)
           BUILD_TOOLS=$(find "$ANDROID_HOME/build-tools" -maxdepth 1 -mindepth 1 -type d | sort -V | tail -1)
-          echo "android_jar=$PLATFORM/android.jar" >> "$GITHUB_OUTPUT"
-          echo "d8=$BUILD_TOOLS/d8" >> "$GITHUB_OUTPUT"
-
-      - name: Compile provider to DEX
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p hitv-helper/build/stubclasses hitv-helper/build/classes hitv-helper/build/dex
-          javac -source 8 -target 8 \
-            -cp '${{ steps.sdk.outputs.android_jar }}' \
-            -d hitv-helper/build/stubclasses \
-            hitv-helper/stub/com/hitv/venom/module_base/flutterdownloader/DownloadedFileProvider.java
-          jar cf hitv-helper/build/stub.jar -C hitv-helper/build/stubclasses .
-
-          javac -source 8 -target 8 \
-            -cp '${{ steps.sdk.outputs.android_jar }}:hitv-helper/build/stub.jar' \
-            -d hitv-helper/build/classes \
-            hitv-helper/src/com/awr/license/AwrLicenseInitializationContentProviderForHiTV2026.java
-          jar cf hitv-helper/build/helper.jar -C hitv-helper/build/classes .
-
-          '${{ steps.sdk.outputs.d8 }}' --release --min-api 21 \
-            --lib '${{ steps.sdk.outputs.android_jar }}' \
-            --classpath hitv-helper/build/stub.jar \
-            --output hitv-helper/build/dex \
-            hitv-helper/build/helper.jar
-          mv hitv-helper/build/dex/classes.dex hitv-helper/build/classes13.dex
-
-      - name: Resolve Android NDK
-        id: ndk
-        shell: bash
-        run: |
-          set -euo pipefail
-          NDK=$(find "$ANDROID_HOME/ndk" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | sort -V | tail -1 || true)
-          if [ -z "$NDK" ]; then
-            SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager 2>/dev/null | head -1 || true)
-            if [ -z "$SDKMANAGER" ]; then
-              echo 'No Android NDK and no sdkmanager found' >&2
-              exit 1
-            fi
-            yes | "$SDKMANAGER" --licenses >/dev/null || true
-            "$SDKMANAGER" 'ndk;27.2.12479018'
-            NDK="$ANDROID_HOME/ndk/27.2.12479018"
-          fi
-          echo "ndk=$NDK" >> "$GITHUB_OUTPUT"
-          echo "Using NDK: $NDK"
-
-      - name: Compile ARM64 native helper
-        shell: bash
-        run: |
-          set -euo pipefail
-          NDK='${{ steps.ndk.outputs.ndk }}'
-          TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64"
-          "$TOOLCHAIN/bin/aarch64-linux-android21-clang" \
-            -shared -fPIC -O2 -Wl,--build-id=none \
-            -o hitv-helper/build/libawr.so \
-            hitv-helper/native/awr.c
-          "$TOOLCHAIN/bin/llvm-strip" hitv-helper/build/libawr.so
-
-      - name: Show artifact hashes
-        shell: bash
-        run: |
-          sha256sum hitv-helper/build/classes13.dex hitv-helper/build/libawr.so
-          file hitv-helper/build/libawr.so
-
+          mkdir -p apk-tools/lib
+          cp "$BUILD_TOOLS/apksigner" apk-tools/apksigner
+          cp "$BUILD_TOOLS/lib/apksigner.jar" apk-tools/lib/apksigner.jar
+          cp "$BUILD_TOOLS/zipalign" apk-tools/zipalign
+          chmod +x apk-tools/apksigner apk-tools/zipalign
+          "$BUILD_TOOLS/apksigner" version
+          "$BUILD_TOOLS/zipalign" -h >/dev/null 2>&1 || true
       - uses: actions/upload-artifact@v4
         with:
-          name: hitv-helper
-          path: |
-            hitv-helper/build/classes13.dex
-            hitv-helper/build/libawr.so
+          name: android-apk-tools
+          path: apk-tools
           if-no-files-found: error
