@@ -1,0 +1,47 @@
+name: Build AWR313VIP Helper
+
+on:
+  push:
+    branches: [tools-export]
+    paths:
+      - '.github/workflows/build-awr313vip.yml'
+      - 'tools/awr313vip/**'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: tools-export
+      - name: Compile AWRVIP dex
+        shell: bash
+        run: |
+          set -euxo pipefail
+          PLATFORM=$(ls -1 "$ANDROID_HOME/platforms" | sort -V | tail -1)
+          BT=$(ls -1 "$ANDROID_HOME/build-tools" | sort -V | tail -1)
+          rm -rf /tmp/awr313vip && mkdir -p /tmp/awr313vip/classes /tmp/awr313vip/dex
+          javac -source 8 -target 8 -encoding UTF-8 -cp "$ANDROID_HOME/platforms/$PLATFORM/android.jar" -d /tmp/awr313vip/classes \
+            tools/awr313vip/stub/s/h/e/l/l/S.java \
+            tools/awr313vip/src/awr/vip/App.java
+          rm -f /tmp/awr313vip/classes/s/h/e/l/l/S.class
+          "$ANDROID_HOME/build-tools/$BT/d8" --min-api 23 --output /tmp/awr313vip/dex $(find /tmp/awr313vip/classes -name '*.class' -type f | tr '\n' ' ')
+          rm -rf tools/awr313vip/out
+          mkdir -p tools/awr313vip/out/chunks
+          base64 -w0 /tmp/awr313vip/dex/classes.dex > /tmp/awr313vip/classes2.dex.b64
+          split -b 3000 -d -a 2 /tmp/awr313vip/classes2.dex.b64 tools/awr313vip/out/chunks/part-
+          sha256sum /tmp/awr313vip/dex/classes.dex > tools/awr313vip/out/classes2.dex.sha256
+          wc -c /tmp/awr313vip/dex/classes.dex > tools/awr313vip/out/classes2.dex.size
+          printf 'platform=%s\nbuild-tools=%s\n' "$PLATFORM" "$BT" > tools/awr313vip/out/build.txt
+      - name: Commit result
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add tools/awr313vip/out
+          git diff --cached --quiet && exit 0
+          git commit -m 'Build AWR313VIP helper dex'
+          git push origin HEAD:tools-export
