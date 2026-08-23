@@ -1,0 +1,3 @@
+12620 /tmp/awr326/dex/classes.dex
+16828 /tmp/awr326/classes2.dex.b64
+29448 total
