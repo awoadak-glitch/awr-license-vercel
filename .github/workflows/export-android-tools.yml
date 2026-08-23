@@ -1,0 +1,36 @@
+name: Export Android Tools
+
+on:
+  push:
+    branches: [tools-export]
+    paths:
+      - '.github/workflows/export-android-tools.yml'
+      - 'tools/export-trigger.txt'
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare tools
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p export
+          curl -L --fail --retry 3 -o export/apktool.jar https://github.com/iBotPeaches/Apktool/releases/download/v3.0.3/apktool_3.0.3.jar
+          BT=$(ls -1 "$ANDROID_HOME/build-tools" | sort -V | tail -1)
+          PLATFORM=$(ls -1 "$ANDROID_HOME/platforms" | sort -V | tail -1)
+          cp "$ANDROID_HOME/build-tools/$BT/aapt2" export/
+          cp "$ANDROID_HOME/build-tools/$BT/zipalign" export/
+          cp "$ANDROID_HOME/build-tools/$BT/apksigner" export/
+          cp "$ANDROID_HOME/build-tools/$BT/d8" export/
+          cp "$ANDROID_HOME/build-tools/$BT/lib/d8.jar" export/
+          cp "$ANDROID_HOME/platforms/$PLATFORM/android.jar" export/
+          chmod +x export/aapt2 export/zipalign export/apksigner export/d8
+          printf 'build-tools=%s\nplatform=%s\n' "$BT" "$PLATFORM" > export/versions.txt
+      - name: Upload tools
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-tools
+          path: export/
+          retention-days: 1
