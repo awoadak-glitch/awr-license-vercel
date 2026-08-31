@@ -1,0 +1,64 @@
+name: Build Mustaqbal Desktop
+
+on:
+  push:
+    branches: [mustaqbal-desktop]
+    paths:
+      - 'desktop/Launcher.cs'
+      - 'desktop/app.manifest'
+      - 'desktop/mustaqbal_icon.b64'
+      - '.github/workflows/build-mustaqbal.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Decode application icon
+        shell: pwsh
+        run: |
+          [IO.File]::WriteAllBytes("desktop\mustaqbal.ico", [Convert]::FromBase64String((Get-Content "desktop\mustaqbal_icon.b64" -Raw).Trim()))
+          Get-Item "desktop\mustaqbal.ico" | Format-List Name,Length
+
+      - name: Compile ALMUSTAQBAL.exe
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path build | Out-Null
+          $csc = "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
+          if (!(Test-Path $csc)) { throw "C# compiler not found: $csc" }
+          & $csc /nologo /target:winexe /platform:anycpu /optimize+ /codepage:65001 `
+            /reference:System.dll `
+            /reference:System.Core.dll `
+            /reference:System.Drawing.dll `
+            /reference:System.Windows.Forms.dll `
+            /reference:System.Web.Extensions.dll `
+            /reference:System.Security.dll `
+            /win32icon:desktop\mustaqbal.ico `
+            /win32manifest:desktop\app.manifest `
+            /out:build\ALMUSTAQBAL.exe `
+            desktop\Launcher.cs
+          if ($LASTEXITCODE -ne 0) { throw "Compilation failed with exit code $LASTEXITCODE" }
+
+      - name: Verify build and write SHA256
+        shell: pwsh
+        run: |
+          $f = Get-Item "build\ALMUSTAQBAL.exe"
+          $h = (Get-FileHash $f.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          "ALMUSTAQBAL.exe`t$($f.Length) bytes`t$h" | Set-Content "build\SHA256.txt" -Encoding ascii
+          Get-Content "build\SHA256.txt"
+
+      - name: Upload Windows build
+        uses: actions/upload-artifact@v4
+        with:
+          name: ALMUSTAQBAL-Windows
+          path: |
+            build/ALMUSTAQBAL.exe
+            build/SHA256.txt
+          if-no-files-found: error
+          retention-days: 30
