@@ -4,7 +4,7 @@ on:
   push:
     branches: [mustaqbal-desktop]
     paths:
-      - 'desktop/Launcher.cs'
+      - 'desktop/v2/**'
       - 'desktop/app.manifest'
       - 'desktop/mustaqbal_icon.b64'
       - '.github/workflows/build-mustaqbal.yml'
@@ -32,6 +32,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path build | Out-Null
           $csc = "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
           if (!(Test-Path $csc)) { throw "C# compiler not found: $csc" }
+          $sources = Get-ChildItem "desktop\v2\*.cs" | Sort-Object Name | ForEach-Object FullName
           & $csc /nologo /target:winexe /platform:anycpu /optimize+ /codepage:65001 `
             /reference:System.dll `
             /reference:System.Core.dll `
@@ -42,7 +43,7 @@ jobs:
             /win32icon:desktop\mustaqbal.ico `
             /win32manifest:desktop\app.manifest `
             /out:build\ALMUSTAQBAL.exe `
-            desktop\Launcher.cs
+            $sources
           if ($LASTEXITCODE -ne 0) { throw "Compilation failed with exit code $LASTEXITCODE" }
 
       - name: Verify build and write SHA256
@@ -56,7 +57,7 @@ jobs:
       - name: Upload Windows build
         uses: actions/upload-artifact@v4
         with:
-          name: ALMUSTAQBAL-Windows
+          name: ALMUSTAQBAL-Windows-v2
           path: |
             build/ALMUSTAQBAL.exe
             build/SHA256.txt
