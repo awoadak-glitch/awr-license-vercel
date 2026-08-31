@@ -191,7 +191,7 @@ namespace AlMustaqbal
         }
         private static IntPtr SetWindowLongPtr(IntPtr hWnd, int nIndex, IntPtr dwNewLong)
         {
-            return IntPtr.Size == 8 ? SetWindowLongPtr64(hWnd, nIndex) : new IntPtr(SetWindowLong32(hWnd, nIndex, dwNewLong.ToInt32()));
+            return IntPtr.Size == 8 ? SetWindowLongPtr64(hWnd, nIndex, dwNewLong) : new IntPtr(SetWindowLong32(hWnd, nIndex, dwNewLong.ToInt32()));
         }
         [DllImport("user32.dll", EntryPoint = "GetWindowLong")]
         private static extern int GetWindowLong32(IntPtr hWnd, int nIndex);
