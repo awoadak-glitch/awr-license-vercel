@@ -6,6 +6,10 @@ import {
   activateDevice, rateLimit, requiredEnv
 } from "../lib/core.js";
 
+const ALLOWED_CLIENT_HASHES = new Set([
+  "449e8cbc38348485f8881dfe396e4e53e2954bc044bf973e363a44029b0f8d3f"
+]);
+
 function b64url(buf) {
   return Buffer.from(buf).toString("base64")
     .replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
@@ -77,6 +81,7 @@ export default {
       if (!/^[A-Za-z0-9_-]{20,128}$/.test(nonce)) return fail("NONCE_REQUIRED", 400);
       if (!/^[A-Za-z0-9._-]{1,32}$/.test(appVersion)) return fail("INVALID_APP_VERSION", 400);
       if (!/^[a-f0-9]{64}$/.test(clientHash)) return fail("CLIENT_HASH_REQUIRED", 400);
+      if (!ALLOWED_CLIENT_HASHES.has(clientHash)) return fail("CLIENT_NOT_ALLOWED", 403);
 
       const id = licenseId(key);
       const license = await getLicenseById(id);
