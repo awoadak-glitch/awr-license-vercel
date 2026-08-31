@@ -23,9 +23,7 @@ function deriveSigningMaterial() {
       const pub = ecdh.getPublicKey(null, "uncompressed");
       const x = pub.subarray(1, 33);
       const y = pub.subarray(33, 65);
-      const jwk = {
-        kty:"EC", crv:"P-256", x:b64url(x), y:b64url(y), d:b64url(d)
-      };
+      const jwk = { kty:"EC", crv:"P-256", x:b64url(x), y:b64url(y), d:b64url(d) };
       const key = createPrivateKey({ key:jwk, format:"jwk" });
       const kid = createHash("sha256").update(pub).digest("hex").slice(0, 20);
       return { key, kid };
@@ -46,6 +44,7 @@ function canonicalPayload(p) {
     p.device_fingerprint,
     p.nonce,
     p.app_version,
+    p.client_hash,
     p.issued_at,
     p.token_expires_at,
     p.license_expires_at || "",
@@ -71,11 +70,13 @@ export default {
       const deviceId = String(body.device_id || "").trim();
       const nonce = String(body.nonce || "").trim();
       const appVersion = String(body.app_version || "1.0.0").trim();
+      const clientHash = String(body.client_hash || "").trim().toLowerCase();
 
       if (!key || key.length > 128) return fail("KEY_REQUIRED", 400);
       if (!deviceId || deviceId.length < 16 || deviceId.length > 256) return fail("DEVICE_REQUIRED", 400);
       if (!/^[A-Za-z0-9_-]{20,128}$/.test(nonce)) return fail("NONCE_REQUIRED", 400);
       if (!/^[A-Za-z0-9._-]{1,32}$/.test(appVersion)) return fail("INVALID_APP_VERSION", 400);
+      if (!/^[a-f0-9]{64}$/.test(clientHash)) return fail("CLIENT_HASH_REQUIRED", 400);
 
       const id = licenseId(key);
       const license = await getLicenseById(id);
@@ -100,6 +101,7 @@ export default {
         device_fingerprint:deviceFingerprint(deviceId),
         nonce,
         app_version:appVersion,
+        client_hash:clientHash,
         issued_at:issuedAt,
         token_expires_at:tokenExpiresAt,
         license_expires_at:license.expires_at || null,
