@@ -7,7 +7,8 @@ import {
 } from "../lib/core.js";
 
 const ALLOWED_CLIENT_HASHES = new Set([
-  "449e8cbc38348485f8881dfe396e4e53e2954bc044bf973e363a44029b0f8d3f"
+  "449e8cbc38348485f8881dfe396e4e53e2954bc044bf973e363a44029b0f8d3f",
+  "e01678a7e35d8a19084f5c4c8d9dce8639b2ddd5a82911da6dbb2bc04839644f"
 ]);
 
 function b64url(buf) {
