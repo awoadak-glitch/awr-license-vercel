@@ -1,0 +1,40 @@
+plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+}
+
+android {
+    namespace = "com.awr.vpn"
+    compileSdk = 34
+
+    defaultConfig {
+        applicationId = "com.awr.vpn"
+        minSdk = 23
+        targetSdk = 34
+        versionCode = 1
+        versionName = "1.0.0"
+        multiDexEnabled = true
+    }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    kotlinOptions { jvmTarget = "17" }
+
+    packaging {
+        jniLibs { useLegacyPackaging = true }
+        resources.excludes += setOf("META-INF/DEPENDENCIES", "META-INF/LICENSE*", "META-INF/NOTICE*")
+    }
+}
+
+dependencies {
+    implementation("androidx.multidex:multidex:2.0.1")
+    implementation("com.github.schwabe:ics-openvpn:v0.6.73-production")
+}
