@@ -43,7 +43,7 @@ async function fetchRows() {
   if (cache.rows.length && Date.now() - cache.at < 90_000) return cache.rows;
   const r = await fetch(SOURCE, {
     headers: {
-      "User-Agent": "AWR-VPN/1.0 (+https://awr-license-vercel.vercel.app)",
+      "User-Agent": "AWR-VPN/2.0 (+https://awr-license-vercel.vercel.app)",
       "Accept": "text/plain,text/csv,*/*"
     },
     signal: AbortSignal.timeout(15000)
@@ -99,6 +99,24 @@ function flag(code) {
   return String.fromCodePoint(...[...code].map(c => 127397 + c.charCodeAt(0)));
 }
 
+function publicServer(x, index = 0) {
+  return {
+    id: x.id,
+    name: `${x.country}${index ? ` ${index}` : ""}`,
+    country: x.country,
+    country_code: x.code,
+    flag: flag(x.code),
+    city: "",
+    ping: x.ping,
+    ping_host: x.ip,
+    quality_score: x.score,
+    speed_bps: x.speed,
+    sessions: x.sessions,
+    protocol: x.proto,
+    premium: true
+  };
+}
+
 export default {
   async fetch(request) {
     try {
@@ -121,20 +139,8 @@ export default {
         let filtered = rows;
         if (country && country !== "AUTO") filtered = filtered.filter(x => x.code === country);
         if (protocol === "udp" || protocol === "tcp") filtered = filtered.filter(x => x.proto === protocol);
-        const servers = filtered.slice(0, MAX_LIST).map((x, index) => ({
-          id: x.id,
-          name: `${x.country} ${index + 1}`,
-          country: x.country,
-          country_code: x.code,
-          flag: flag(x.code),
-          city: "",
-          ping: x.ping,
-          speed_bps: x.speed,
-          sessions: x.sessions,
-          protocol: x.proto,
-          premium: true
-        }));
-        return json({ success: true, vip: true, source: "AWR Secure Repository", count: servers.length, servers });
+        const servers = filtered.slice(0, MAX_LIST).map((x, index) => publicServer(x, index + 1));
+        return json({ success: true, vip: true, source: "AWR Secure Repository", smart_route: "local_ping_speed_load", count: servers.length, servers });
       }
 
       if (action === "get") {
@@ -148,16 +154,7 @@ export default {
         return json({
           success: true,
           vip: true,
-          server: {
-            id: item.id,
-            name: item.country,
-            country: item.country,
-            country_code: item.code,
-            flag: flag(item.code),
-            protocol: item.proto,
-            ping: item.ping,
-            speed_bps: item.speed
-          },
+          server: publicServer(item),
           ovpn: item.config
         });
       }
