@@ -1,7 +1,7 @@
 import { licenseId, getLicenseById, expired } from "../lib/core.js";
 
 const UNLIMITED_KEYS = new Set(["AWRVIP", "AWR_2026", "AWR-2026"]);
-const APP_LINK = "vpnify://offer/AWRVIP2026OK?source=awr";
+const APP_LINK = "vpnify://offer/premium?source=awr";
 
 function esc(value = "") {
   return String(value)
