@@ -9,6 +9,12 @@ on:
     paths:
       - 'android/AWRVPN/**'
       - '.github/workflows/build-awr-vpn.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'android/AWRVPN/**'
+      - '.github/workflows/build-awr-vpn.yml'
 
 jobs:
   build:
