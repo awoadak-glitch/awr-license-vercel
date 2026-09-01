@@ -9,10 +9,10 @@ android {
 
     defaultConfig {
         applicationId = "com.awr.vpn"
-        minSdk = 23
+        minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.0.0-ultra"
         multiDexEnabled = true
     }
 
@@ -35,6 +35,5 @@ android {
 }
 
 dependencies {
-    implementation("androidx.multidex:multidex:2.0.1")
     implementation("com.github.schwabe:ics-openvpn:v0.6.73-production")
 }
