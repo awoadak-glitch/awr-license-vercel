@@ -110,6 +110,7 @@ function publicServer(x, index = 0) {
     ping: x.ping,
     ping_host: x.ip,
     quality_score: x.score,
+    score: x.score,
     speed_bps: x.speed,
     sessions: x.sessions,
     protocol: x.proto,
