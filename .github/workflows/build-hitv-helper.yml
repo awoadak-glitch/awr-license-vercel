@@ -1,0 +1,32 @@
+name: Export Android APK Tools
+
+on:
+  push:
+    branches: [hitv-helper-build]
+    paths:
+      - '.github/workflows/build-hitv-helper.yml'
+  workflow_dispatch:
+
+jobs:
+  export-tools:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Export apksigner and zipalign
+        shell: bash
+        run: |
+          set -euo pipefail
+          BUILD_TOOLS=$(find "$ANDROID_HOME/build-tools" -maxdepth 1 -mindepth 1 -type d | sort -V | tail -1)
+          mkdir -p apk-tools/lib
+          cp "$BUILD_TOOLS/apksigner" apk-tools/apksigner
+          cp "$BUILD_TOOLS/lib/apksigner.jar" apk-tools/lib/apksigner.jar
+          cp "$BUILD_TOOLS/zipalign" apk-tools/zipalign
+          chmod +x apk-tools/apksigner apk-tools/zipalign
+          "$BUILD_TOOLS/apksigner" version
+          "$BUILD_TOOLS/zipalign" -h >/dev/null 2>&1 || true
+          echo tools-ready
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-apk-tools
+          path: apk-tools
+          if-no-files-found: error
