@@ -2,8 +2,10 @@ import { json, licenseId, getLicenseById, expired, clientIp, rateLimit } from ".
 
 const MASTER_KEYS = new Set(["AWRVIP", "AWR_2026", "AWR-2026"]);
 const VPNGATE = "https://www.vpngate.net/api/iphone/";
+const AUTO_OVPN = "https://raw.githubusercontent.com/9xN/auto-ovpn/main/json/data.json";
 const PUBLIC_HEALTH = "https://publicvpnlist.com/api/v1/servers?protocol=openvpn&status=online&fresh_within=1800&sort=score&order=desc&per_page=200";
-const MAX_LIST = 500;
+const MAX_PRO_LIST = 500;
+const MAX_FREE_LIST = 3000;
 const CACHE_MS = 75_000;
 
 let cache = { at: 0, rows: [] };
@@ -120,18 +122,37 @@ function qualityOf(x, h) {
   return Math.max(1, Math.min(100, Math.round(gateScore + speed + ping + sessions + verified + hScore)));
 }
 
-async function fetchRows() {
-  if (cache.rows.length && Date.now() - cache.at < CACHE_MS) return cache.rows;
-  const [r, health] = await Promise.all([
-    fetch(VPNGATE, {
+function finishRow(raw, health, source) {
+  const config = decodeCfg(raw.configBase64);
+  if (!config || !/\bclient\b/i.test(config)) return null;
+  const ip = String(raw.ip || "").trim();
+  if (!ip) return null;
+  const remote = parseRemote(config, ip);
+  const proto = cfgProto(config, remote);
+  const port = remote.port || (proto === "tcp" ? 443 : 1194);
+  const code = String(raw.code || "--").toUpperCase();
+  const row = {
+    host: String(raw.host || ip), remoteHost: ip, ip, port,
+    score: safeInt(raw.score), ping: safeInt(raw.ping), speed: safeInt(raw.speed),
+    country: raw.country || code || "Unknown", code,
+    sessions: safeInt(raw.sessions), proto, config, feedSource: source
+  };
+  const h = health.byEndpoint.get(endpointKey(ip, proto, port)) || health.byIp.get(ip) || null;
+  row.verified = !!h;
+  row.health = h;
+  row.quality = qualityOf(row, h);
+  row.id = locatorFor(row);
+  return row;
+}
+
+async function fetchGateRows(health) {
+  const r = await fetch(VPNGATE, {
       headers: {
         "User-Agent": "AWR-VPN/2.0 (+https://awr-license-vercel.vercel.app)",
         "Accept": "text/plain,text/csv,*/*"
       },
       signal: AbortSignal.timeout(15000)
-    }),
-    fetchHealth()
-  ]);
+    });
   if (!r.ok) throw new Error(`VPN source HTTP ${r.status}`);
   const text = await r.text();
   const lines = text.split(/\r?\n/).filter(Boolean);
@@ -145,35 +166,44 @@ async function fetchRows() {
     const values = csvLine(line);
     if (values.length < headers.length) continue;
     const x = Object.fromEntries(headers.map((h, idx) => [h, values[idx] ?? ""]));
-    const config = decodeCfg(x.OpenVPN_ConfigData_Base64);
-    if (!config || !/\bclient\b/i.test(config)) continue;
-    const ip = String(x.IP || "").trim();
-    if (!ip) continue;
-    const remote = parseRemote(config, ip);
-    const proto = cfgProto(config, remote);
-    const port = remote.port || (proto === "tcp" ? 443 : 1194);
-    const code = (x.CountryShort || "--").toUpperCase();
-    const row = {
-      host: String(x.HostName || ip),
-      remoteHost: ip,
-      ip,
-      port,
-      score: safeInt(x.Score),
-      ping: safeInt(x.Ping),
-      speed: safeInt(x.Speed),
-      country: x.CountryLong || x.CountryShort || "Unknown",
-      code,
-      sessions: safeInt(x.NumVpnSessions),
-      proto,
-      config
-    };
-    const h = health.byEndpoint.get(endpointKey(ip, proto, port)) || health.byIp.get(ip) || null;
-    row.verified = !!h;
-    row.health = h;
-    row.quality = qualityOf(row, h);
-    row.id = locatorFor(row);
-    rows.push(row);
+    const row = finishRow({
+      host: x.HostName, ip: x.IP, score: x.Score, ping: x.Ping, speed: x.Speed,
+      country: x.CountryLong || x.CountryShort, code: x.CountryShort,
+      sessions: x.NumVpnSessions, configBase64: x.OpenVPN_ConfigData_Base64
+    }, health, "VPN Gate Official");
+    if (row) rows.push(row);
   }
+  return rows;
+}
+
+async function fetchMirrorRows(health) {
+  const r = await fetch(AUTO_OVPN, {
+    headers: { "Accept": "application/json", "User-Agent": "AWR-VPN/2.2" },
+    signal: AbortSignal.timeout(10000)
+  });
+  if (!r.ok) throw new Error(`AutoOVPN HTTP ${r.status}`);
+  const payload = await r.json();
+  const sourceRows = Array.isArray(payload) ? payload.flatMap(x => Array.isArray(x?.servers) ? x.servers : []) : [];
+  return sourceRows.map(x => finishRow({
+    host: x.hostname, ip: x.ip, score: x.score, ping: x.ping, speed: x.speed,
+    country: x.countrylong || x.countryshort, code: x.countryshort,
+    sessions: x.numvpnsessions, configBase64: x.openvpn_configdata_base64
+  }, health, "AutoOVPN Community Mirror")).filter(Boolean);
+}
+
+async function fetchRows() {
+  if (cache.rows.length && Date.now() - cache.at < CACHE_MS) return cache.rows;
+  const health = await fetchHealth();
+  const feeds = await Promise.allSettled([fetchGateRows(health), fetchMirrorRows(health)]);
+  const merged = feeds.flatMap(x => x.status === "fulfilled" ? x.value : []);
+  if (!merged.length) throw new Error("All VPN feeds are unavailable");
+  const unique = new Map();
+  for (const row of merged) {
+    const key = endpointKey(row.ip, row.proto, row.port);
+    const old = unique.get(key);
+    if (!old || row.quality > old.quality || (row.verified && !old.verified)) unique.set(key, row);
+  }
+  const rows = [...unique.values()];
   rows.sort((a, b) =>
     (Number(b.verified) - Number(a.verified)) ||
     (b.quality - a.quality) ||
@@ -208,7 +238,7 @@ function normalizeConfig(item) {
   return cfg + "\n";
 }
 
-function publicServer(x, index) {
+function publicServer(x, index, premium = true) {
   return {
     id: x.id,
     name: `${x.country} ${index + 1}`,
@@ -222,10 +252,12 @@ function publicServer(x, index) {
     speed_bps: x.health?.speedMbps > 0 ? Math.round(x.health.speedMbps * 1_000_000) : x.speed,
     sessions: x.sessions,
     protocol: x.proto,
-    premium: true,
+    premium,
     verified: x.verified,
     quality_score: x.quality,
-    source: x.verified ? "VPN Gate + PublicVPNList" : "VPN Gate"
+    source: x.verified
+      ? `${premium ? "AWR PRO" : "VPN FREE"} • ${x.feedSource} + PublicVPNList`
+      : `${premium ? "AWR PRO" : "VPN FREE"} • ${x.feedSource}`
   };
 }
 
@@ -259,11 +291,15 @@ export default {
       const rl = await rateLimit("vpn_repo", clientIp(request), 120, 60);
       if (!rl.allowed) return json({ success: false, code: "RATE_LIMITED", retry_after: rl.retry_after }, 429);
 
-      const vipKey = request.headers.get("x-awr-vip") || "";
-      const auth = await validVip(vipKey);
-      if (!auth.ok) return json({ success: false, code: auth.code, message: "AWR-VIP is required to access the VPN repository", expires_at: auth.expires_at || null }, 401);
-
       const url = new URL(request.url);
+      const tier = String(url.searchParams.get("tier") || "pro").toLowerCase();
+      const isFree = tier === "free";
+      const vipKey = request.headers.get("x-awr-vip") || "";
+      if (!isFree) {
+        const auth = await validVip(vipKey);
+        if (!auth.ok) return json({ success: false, code: auth.code, message: "AWR-VIP is required to access VPN PRO", expires_at: auth.expires_at || null }, 401);
+      }
+
       const action = String(url.searchParams.get("action") || "list").toLowerCase();
       const protocol = String(url.searchParams.get("protocol") || "auto").toLowerCase();
       const country = String(url.searchParams.get("country") || "").toUpperCase();
@@ -273,8 +309,13 @@ export default {
         let filtered = rows;
         if (country && country !== "AUTO") filtered = filtered.filter(x => x.code === country);
         if (protocol === "udp" || protocol === "tcp") filtered = filtered.filter(x => x.proto === protocol);
-        const servers = filtered.slice(0, MAX_LIST).map(publicServer);
-        return json({ success: true, vip: true, source: "AWR Secure Multi-Source Repository", total_live: filtered.length, count: servers.length, servers });
+        const limit = isFree ? MAX_FREE_LIST : MAX_PRO_LIST;
+        const servers = filtered.slice(0, limit).map((x, index) => publicServer(x, index, !isFree));
+        return json({
+          success: true, vip: !isFree, tier: isFree ? "free" : "pro",
+          source: isFree ? "VPN Gate + AutoOVPN + PublicVPNList" : "AWR Secure Multi-Source Repository",
+          total_live: filtered.length, count: servers.length, servers
+        });
       }
 
       if (action === "get" || action === "best") {
@@ -282,7 +323,7 @@ export default {
         const selected = choose(rows, locator, country, protocol);
         if (!selected.item) return json({ success: false, code: "NO_LIVE_SERVER" }, 503);
         const item = selected.item;
-        return json({ success: true, vip: true, fallback: selected.fallback, server: publicServer(item, 0), ovpn: normalizeConfig(item) });
+        return json({ success: true, vip: !isFree, tier: isFree ? "free" : "pro", fallback: selected.fallback, server: publicServer(item, 0, !isFree), ovpn: normalizeConfig(item) });
       }
 
       return json({ success: false, code: "BAD_ACTION" }, 400);
