@@ -2,7 +2,8 @@
   "cleanUrls": true,
   "rewrites": [
     { "source": "/u", "destination": "/api/hitv-update" },
-    { "source": "/v", "destination": "/api/vpnify-activate" }
+    { "source": "/v", "destination": "/api/vpnify-activate" },
+    { "source": "/api/oscar-verify", "destination": "/api/health?service=oscar" }
   ],
   "headers": [
     {
